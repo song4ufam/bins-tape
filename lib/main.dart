@@ -811,48 +811,60 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: BinsTapeColors.navyCard,
-        title: const Text('업데이트 내려받는 중...',
-            style: TextStyle(color: BinsTapeColors.tapeCream)),
-        content: ValueListenableBuilder<UpdateProgress>(
-          valueListenable: progress,
-          builder: (context, p, _) => Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              LinearProgressIndicator(
-                value: p.stage == UpdateStage.installing
-                    ? 1
-                    : (p.percent ?? 0) / 100,
-                color: BinsTapeColors.tapeAmber,
-                backgroundColor: BinsTapeColors.magneticBrown,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                p.stage == UpdateStage.installing
-                    ? '설치 화면이 뜨면 "설치"를 눌러주세요.'
-                    : '${p.percent ?? 0}%',
-                style: const TextStyle(color: BinsTapeColors.dimText),
-              ),
-            ],
-          ),
-        ),
+      builder: (context) => ValueListenableBuilder<UpdateProgress>(
+        valueListenable: progress,
+        builder: (context, p, _) {
+          final waitingForInstallTap = p.stage == UpdateStage.installing;
+          return AlertDialog(
+            backgroundColor: BinsTapeColors.navyCard,
+            title: Text(
+              waitingForInstallTap ? '설치 확인창을 확인해주세요' : '업데이트 내려받는 중...',
+              style: const TextStyle(color: BinsTapeColors.tapeCream),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                LinearProgressIndicator(
+                  value: waitingForInstallTap ? null : (p.percent ?? 0) / 100,
+                  color: BinsTapeColors.tapeAmber,
+                  backgroundColor: BinsTapeColors.magneticBrown,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  waitingForInstallTap
+                      ? '안드로이드 설치 확인창에서 "설치"를 눌러주세요.\n'
+                          '완료되면 이 창이 저절로 닫혀요.'
+                      : '${p.percent ?? 0}%',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: BinsTapeColors.dimText),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
 
     String? error;
+    var done = false;
     await for (final p in installUpdate(info)) {
       progress.value = p;
       if (p.stage == UpdateStage.error) {
         error = p.message;
         break;
       }
-      if (p.stage == UpdateStage.installing) break;
+      if (p.stage == UpdateStage.done) {
+        done = true;
+        break;
+      }
     }
     if (!mounted) return;
     Navigator.of(context, rootNavigator: true).pop(); // 진행 창 닫기
     if (error != null) {
       showBinsTapeSnackBar(context, error, icon: Icons.error_outline);
+    } else if (done) {
+      showBinsTapeSnackBar(context, '설치 완료! 다음에 앱을 열면 새 버전이에요.',
+          icon: Icons.check_circle_outline);
     }
   }
 

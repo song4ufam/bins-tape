@@ -43,7 +43,7 @@ class UpdateInfo {
   }
 }
 
-enum UpdateStage { downloading, installing, error }
+enum UpdateStage { downloading, installing, done, error }
 
 class UpdateProgress {
   final UpdateStage stage;

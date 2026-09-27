@@ -32,10 +32,14 @@ Future<UpdateInfo?> checkForUpdate() async {
 }
 
 /// APK를 내려받고 설치 화면을 띄운다. 진행 상황을 스트림으로 알려준다.
+///
+/// usePackageInstaller를 켜야 안드로이드의 실제 설치 결과(성공/취소/실패)를 돌려받을 수 있다.
+/// 꺼두면(기본값) 설치 화면만 띄우고 끝나버려서, 사용자가 "설치"를 눌렀는지 알 방법이 없다.
 Stream<UpdateProgress> installUpdate(UpdateInfo info) async* {
   await for (final event in OtaUpdate().execute(
     info.apkUrl,
     destinationFilename: 'BinsTape-update.apk',
+    usePackageInstaller: true,
   )) {
     switch (event.status) {
       case OtaStatus.DOWNLOADING:
@@ -46,7 +50,12 @@ Stream<UpdateProgress> installUpdate(UpdateInfo info) async* {
       case OtaStatus.INSTALLING:
         yield const UpdateProgress(UpdateStage.installing);
       case OtaStatus.INSTALLATION_DONE:
-        yield const UpdateProgress(UpdateStage.installing);
+        yield const UpdateProgress(UpdateStage.done);
+      case OtaStatus.CANCELED:
+        yield const UpdateProgress(
+          UpdateStage.error,
+          message: '설치를 취소했어요.',
+        );
       case OtaStatus.PERMISSION_NOT_GRANTED_ERROR:
         yield const UpdateProgress(
           UpdateStage.error,
