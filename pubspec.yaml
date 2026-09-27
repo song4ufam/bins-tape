@@ -1,0 +1,40 @@
+name: bins_tape
+description: "Bin's Tape - 꿈을 담아 녹음하는 마법의 공백 테이프"
+publish_to: 'none'
+version: 0.1.0+9
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+  audioplayers: ^6.0.0
+  file_picker: ^8.1.4
+  shared_preferences: ^2.3.3
+  http: ^1.2.2
+  # 영상 → 가사(OCR)는 PC 웹에서만 동작한다 (lib/ocr_service_web.dart, Tesseract.js 사용).
+  web: ^1.1.0
+  package_info_plus: ^9.0.1
+  ota_update: ^7.1.0
+  on_audio_query: ^2.9.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/icon/icon.png"
+  adaptive_icon_background: "#17181A"
+  adaptive_icon_foreground: "assets/icon/icon_foreground.png"
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/lyrics/
+    - assets/audio/
