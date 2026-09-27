@@ -865,6 +865,10 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
     } else if (done) {
       showBinsTapeSnackBar(context, '설치 완료! 다음에 앱을 열면 새 버전이에요.',
           icon: Icons.check_circle_outline);
+    } else {
+      // ACTION_INSTALL_PACKAGE 방식은 설치 화면만 띄우고 결과를 알려주지 않는다.
+      showBinsTapeSnackBar(context, '설치 화면이 열렸어요. 설치를 마치면 앱을 다시 켜주세요.',
+          icon: Icons.open_in_new);
     }
   }
 
