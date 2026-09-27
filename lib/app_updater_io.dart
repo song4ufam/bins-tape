@@ -33,16 +33,16 @@ Future<UpdateInfo?> checkForUpdate() async {
 
 /// APK를 내려받고 설치 화면을 띄운다. 진행 상황을 스트림으로 알려준다.
 ///
-/// usePackageInstaller(PackageInstaller 세션 방식)를 켜면 설치 성공/실패를 돌려받을 수
-/// 있지만, 일부 기기(특히 제조사 커스텀 안드로이드)에서 설치 확인창 자체를 안 띄우고
-/// 무한 대기에 빠지는 문제가 있었다. 그래서 더 단순하고 호환성 좋은 ACTION_INSTALL_PACKAGE
-/// 방식을 쓴다 - 설치 화면은 확실히 뜨지만, 설치가 끝났는지는 앱이 알 수 없다(그래서
-/// "완료" 신호 없이 스트림이 곧바로 끝난다).
+/// usePackageInstaller=false가 쓰는 ACTION_INSTALL_PACKAGE는 최신 안드로이드에서
+/// 폐지(deprecated)돼서 처리할 액티비티가 없으면 예외로 앱이 죽는다(실제로 겪은 문제).
+/// PackageInstaller 세션 방식(true)은 REQUEST_INSTALL_PACKAGES 권한이 매니페스트에
+/// 있어야 설치 확인창이 뜬다 - 이 권한은 나중에 추가됐고 이 방식은 그 이후 제대로
+/// 테스트된 적이 없어서 다시 이걸로 되돌린다.
 Stream<UpdateProgress> installUpdate(UpdateInfo info) async* {
   await for (final event in OtaUpdate().execute(
     info.apkUrl,
     destinationFilename: 'BinsTape-update.apk',
-    usePackageInstaller: false,
+    usePackageInstaller: true,
   )) {
     switch (event.status) {
       case OtaStatus.DOWNLOADING:
