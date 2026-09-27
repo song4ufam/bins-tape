@@ -19,9 +19,12 @@ Future<List<DeviceSong>> queryDeviceSongs() async {
     orderType: OrderType.ASC_OR_SMALLER,
     uriType: UriType.EXTERNAL,
   );
+  // MediaStore가 같은 파일을 여러 행으로 중복 인덱싱할 때가 있어서, 실제 파일 경로
+  // 기준으로 한 번씩만 남긴다.
+  final seenPaths = <String>{};
   return [
     for (final s in songs)
-      if (s.data.isNotEmpty)
+      if (s.data.isNotEmpty && seenPaths.add(s.data))
         DeviceSong(
           path: s.data,
           title: s.title,

@@ -5,3 +5,6 @@ build/
 *.apk
 assets/audio/*.mp3
 android/local.properties
+android/key.properties
+android/app/*.jks
+android/app/*.keystore
