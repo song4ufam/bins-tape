@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ota_update 플러그인이 내려받은 apk를 놓는 위치(파일별 내부 저장소의 ota_update 폴더)를
+     FileProvider가 공유할 수 있게 알려준다. -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <files-path name="ota_update" path="ota_update/" />
+</paths>
