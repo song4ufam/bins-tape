@@ -43,6 +43,7 @@ Stream<UpdateProgress> installUpdate(UpdateInfo info) async* {
     info.apkUrl,
     destinationFilename: 'BinsTape-update.apk',
     usePackageInstaller: true,
+    sha256checksum: info.sha256,
   )) {
     switch (event.status) {
       case OtaStatus.DOWNLOADING:
@@ -63,6 +64,11 @@ Stream<UpdateProgress> installUpdate(UpdateInfo info) async* {
         yield const UpdateProgress(
           UpdateStage.error,
           message: '설치 권한이 필요해요. 설정에서 이 앱의 "출처를 알 수 없는 앱 설치"를 허용해주세요.',
+        );
+      case OtaStatus.CHECKSUM_ERROR:
+        yield const UpdateProgress(
+          UpdateStage.error,
+          message: '다운로드한 파일이 손상됐어요. 다시 시도해주세요.',
         );
       default:
         yield UpdateProgress(

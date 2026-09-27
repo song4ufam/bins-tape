@@ -10,20 +10,27 @@ class UpdateInfo {
   final int build; // 버전 뒤 + 다음 숫자(빌드 번호). 이게 클수록 새 버전.
   final String apkUrl;
   final String notes;
+  final String? sha256; // 있으면 다운로드 후 무결성 검증(손상된 apk 설치 방지)에 쓴다.
 
   const UpdateInfo({
     required this.version,
     required this.build,
     required this.apkUrl,
     required this.notes,
+    this.sha256,
   });
 
   /// GitHub 'releases/latest' 응답에서 만든다. 태그 이름은 pubspec 버전과 같게 붙인다
   /// (예: 0.1.0+3 또는 v0.1.0+3). APK 파일이 없거나 빌드 번호를 못 읽으면 null.
+  /// 릴리스 노트 본문에 "SHA256: <해시>" 줄이 있으면 다운로드 무결성 검증에 쓴다.
   static UpdateInfo? fromGithubRelease(Map<String, dynamic> json) {
     final tag = (json['tag_name'] as String?)?.trim() ?? '';
     final buildMatch = RegExp(r'\+(\d+)').firstMatch(tag);
     if (buildMatch == null) return null;
+
+    final body = (json['body'] as String?)?.trim() ?? '';
+    final shaMatch =
+        RegExp(r'SHA256:\s*([0-9a-fA-F]{64})').firstMatch(body);
 
     final assets = (json['assets'] as List<dynamic>? ?? const []);
     for (final a in assets) {
@@ -35,7 +42,8 @@ class UpdateInfo {
           version: tag.startsWith('v') ? tag.substring(1) : tag,
           build: int.parse(buildMatch.group(1)!),
           apkUrl: url,
-          notes: (json['body'] as String?)?.trim() ?? '',
+          notes: body,
+          sha256: shaMatch?.group(1)?.toLowerCase(),
         );
       }
     }
