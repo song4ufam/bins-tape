@@ -1768,6 +1768,7 @@ class _DeviceLibraryPickerScreen extends StatefulWidget {
 class _DeviceLibraryPickerScreenState
     extends State<_DeviceLibraryPickerScreen> {
   List<DeviceSong>? _songs;
+  bool _allAlreadyAdded = false;
   String _query = '';
   final Set<String> _selected = {};
 
@@ -1783,7 +1784,11 @@ class _DeviceLibraryPickerScreenState
     // 중복으로 추가될 일이 없게 한다.
     final filtered =
         songs.where((s) => !widget.alreadyAdded.contains(s.path)).toList();
-    if (mounted) setState(() => _songs = filtered);
+    if (!mounted) return;
+    setState(() {
+      _songs = filtered;
+      _allAlreadyAdded = songs.isNotEmpty && filtered.isEmpty;
+    });
   }
 
   List<DeviceSong> _filtered(List<DeviceSong> songs) {
@@ -1832,14 +1837,16 @@ class _DeviceLibraryPickerScreenState
                   ),
                 ),
                 if (songs.isEmpty)
-                  const Expanded(
+                  Expanded(
                     child: Center(
                       child: Padding(
-                        padding: EdgeInsets.all(24),
+                        padding: const EdgeInsets.all(24),
                         child: Text(
-                          '폰에서 음악 파일을 찾지 못했어요.\n카카오톡 등으로 받은 곡이 있다면 한 번 다운로드 폴더를 열어봐 주세요.',
+                          _allAlreadyAdded
+                              ? '폰에 있는 곡이 전체 곡에 이미 다 들어가 있어요.'
+                              : '폰에서 음악 파일을 찾지 못했어요.\n카카오톡 등으로 받은 곡이 있다면 한 번 다운로드 폴더를 열어봐 주세요.',
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: BinsTapeColors.dimText),
+                          style: const TextStyle(color: BinsTapeColors.dimText),
                         ),
                       ),
                     ),
