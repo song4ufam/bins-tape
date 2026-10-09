@@ -6,3 +6,5 @@ bool get deviceLibrarySupported => false;
 Future<bool> requestDeviceLibraryPermission() async => false;
 
 Future<List<DeviceSong>> queryDeviceSongs() async => [];
+
+Future<String?> fetchEmbeddedArtworkPath(int songId) async => null;

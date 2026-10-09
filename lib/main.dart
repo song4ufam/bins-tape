@@ -19,6 +19,7 @@ import 'lyrics_ocr.dart';
 import 'ocr_service_stub.dart' if (dart.library.js_interop) 'ocr_service_web.dart';
 import 'media_bridge.dart';
 import 'package:home_widget/home_widget.dart';
+import 'art_image_stub.dart' if (dart.library.io) 'art_image_io.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -466,6 +467,9 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
   /// 기기에서 사용자가 직접 추가한 곡의 파일 경로 목록 (앱 재시작 후에도 유지됨).
   List<String> _devicePaths = [];
 
+  /// 파일 경로 -> MediaStore id. 파일에 박혀있는 앨범아트를 꺼내올 때 필요하다.
+  final Map<String, int> _deviceSongIds = {};
+
   // 파일명만으로는 실제 가사/앨범아트를 알 수 없어서, 인터넷에서 찾아온 결과를
   // audioAsset(경로)을 키로 캐싱해둔다. device 트랙은 getter가 호출될 때마다
   // 새 Track 인스턴스를 만들기 때문에, 이 캐시가 없으면 fetch 결과가 매번 사라진다.
@@ -553,6 +557,20 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
   /// 현재 트랙의 가사/앨범아트를 아직 못 찾아왔다면 lrclib.net / iTunes에서 가져온다.
   /// 가사는 버전(인트로 길이)에 따라 밀릴 수 있어서, 실제 mp3 재생 길이를 알기
   /// 전까지는(즉 _duration이 준비되기 전까지는) 가사 fetch를 미룬다.
+  /// 앨범아트를 구한다. 파일에 이미 박혀있는 이미지(임베드 아트워크)가 있으면
+  /// 그걸 꺼내 쓰고, 없을 때만 인터넷(iTunes)에서 찾아본다.
+  Future<String?> _resolveAlbumArt(Track track) async {
+    final songId = _deviceSongIds[track.audioAsset];
+    if (songId != null) {
+      final embedded = await fetchEmbeddedArtworkPath(songId);
+      if (embedded != null) return embedded;
+    }
+    return LyricsService.fetchAlbumArtUrl(
+      artist: track.lyricsSearchArtist ?? track.artist,
+      title: track.lyricsSearchTitle ?? track.title,
+    );
+  }
+
   Future<void> _ensureMetadata(Track track) async {
     final key = track.audioAsset;
     if (key.isEmpty) return; // 빈 재생목록 자리표시용 트랙.
@@ -574,12 +592,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
                 targetDuration: _duration,
               )
             : Future.value(<LyricLine>[]),
-        needsArt
-            ? LyricsService.fetchAlbumArtUrl(
-                artist: track.lyricsSearchArtist ?? track.artist,
-                title: track.lyricsSearchTitle ?? track.title,
-              )
-            : Future.value(null),
+        needsArt ? _resolveAlbumArt(track) : Future.value(null),
       ]);
 
       if (!mounted) return;
@@ -816,6 +829,23 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
       _currentIndex = 0;
     });
     _ensureMetadata(_track);
+    _reloadDeviceSongIds();
+  }
+
+  /// 앱을 재시작하면 MediaStore id가 기억 안 나 있으니(파일 경로만 저장해뒀음),
+  /// 기기 라이브러리를 다시 훑어서 경로 기준으로 id를 다시 매칭해둔다.
+  /// 임베드 앨범아트를 꺼내올 때 이 id가 필요하다.
+  Future<void> _reloadDeviceSongIds() async {
+    if (kIsWeb || !deviceLibrarySupported) return;
+    try {
+      final songs = await queryDeviceSongs();
+      if (!mounted) return;
+      for (final s in songs) {
+        _deviceSongIds[s.path] = s.id;
+      }
+    } catch (_) {
+      // 권한이 없거나 조회 실패해도 인터넷 검색으로 넘어가면 되니 조용히 넘어간다.
+    }
   }
 
   DateTime? _lastUpdateCheck;
@@ -1381,6 +1411,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
         if (!added.contains(s.path)) continue;
         _titleOverrides[s.path] = s.title;
         _artistOverrides[s.path] = s.artist;
+        _deviceSongIds[s.path] = s.id;
       }
       final active = _activePlaylist;
       if (active != null) {
@@ -2183,10 +2214,10 @@ class _BlurredAlbumBackground extends StatelessWidget {
             ),
           ),
         ),
-        // 인터넷에서 찾아온 실제 앨범아트가 있으면 흐리게 깔아준다.
+        // 실제 앨범아트(파일에 박혀있던 것 또는 인터넷에서 찾아온 것)가 있으면 흐리게 깔아준다.
         if (isNetworkArt)
-          Image.network(
-            assetPath,
+          Image(
+            image: artImageProvider(assetPath),
             fit: BoxFit.cover,
             errorBuilder: (_, __, ___) => const SizedBox.shrink(),
           ),

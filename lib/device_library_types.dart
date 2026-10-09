@@ -5,10 +5,15 @@ class DeviceSong {
   final String artist;
   final Duration duration;
 
+  /// MediaStore 안에서의 고유 id. 파일에 박혀있는 앨범아트(임베드 아트워크)를
+  /// 나중에 다시 꺼내올 때 이 id가 필요하다.
+  final int id;
+
   const DeviceSong({
     required this.path,
     required this.title,
     required this.artist,
     required this.duration,
+    required this.id,
   });
 }

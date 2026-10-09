@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:on_audio_query/on_audio_query.dart';
 
 import 'device_library_types.dart';
@@ -34,6 +36,28 @@ Future<List<DeviceSong>> queryDeviceSongs() async {
               ? '알 수 없는 아티스트'
               : s.artist!,
           duration: Duration(milliseconds: s.duration ?? 0),
+          id: s.id,
         ),
   ];
+}
+
+/// 파일 안에 박혀있는 앨범아트(ID3 임베드 이미지)를 꺼내서 캐시 파일로 저장하고
+/// 그 경로를 돌려준다. 임베드된 이미지가 없으면 null (인터넷 검색으로 넘어간다).
+Future<String?> fetchEmbeddedArtworkPath(int songId) async {
+  try {
+    final bytes = await _query.queryArtwork(
+      songId,
+      ArtworkType.AUDIO,
+      format: ArtworkFormat.JPEG,
+      size: 600,
+    );
+    if (bytes == null || bytes.isEmpty) return null;
+
+    final dir = await Directory.systemTemp.createTemp('bins_tape_art_');
+    final file = File('${dir.path}/$songId.jpg');
+    await file.writeAsBytes(bytes, flush: true);
+    return file.path;
+  } catch (_) {
+    return null;
+  }
 }
