@@ -8,3 +8,9 @@ android/local.properties
 android/key.properties
 android/app/*.jks
 android/app/*.keystore
+
+# YouTube to MP3 by Bin 도구가 첫 실행 때 내려받는 외부 실행파일들 (수백MB, 저장소에 안 올림)
+assets/sample/YouTube to MP3 by Bin/runtime/
+assets/sample/YouTube to MP3 by Bin/*.exe
+assets/sample/YouTube to MP3 by Bin/*.zip
+*.traineddata
