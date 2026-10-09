@@ -171,6 +171,12 @@ class Track {
   }
 }
 
+/// "알 수 없는 아티스트"는 화면에 보여주기 위한 표시용 문구일 뿐인데, 그대로
+/// 검색어에 섞어 보내면 인터넷 검색(가사/앨범아트)이 엉뚱한 결과를 찾아온다.
+/// 검색어로 쓸 때는 빈 문자열로 바꿔서 제목만으로 검색되게 한다.
+String searchableArtist(String artist) =>
+    artist == '알 수 없는 아티스트' ? '' : artist;
+
 /// audioplayers에 넘길 Source를 트랙 종류에 맞게 만들어준다.
 Source buildAudioSource(Track track) {
   return track.isDeviceFile
@@ -375,6 +381,45 @@ class LyricsService {
       return null;
     }
   }
+
+  /// 자동 매칭이 틀렸거나 못 찾았을 때 사용자가 직접 고를 수 있도록 iTunes 검색
+  /// 결과 여러 개를 그대로 돌려준다 (제목+아티스트로 검색, 없으면 제목만으로).
+  static Future<List<Map<String, dynamic>>> searchAlbumArtCandidates({
+    required String artist,
+    required String title,
+  }) async {
+    final combined = await _itunesSearch('$artist $title');
+    if (combined.isNotEmpty) return combined;
+    if (title.isEmpty) return [];
+    return _itunesSearch(title);
+  }
+
+  static Future<List<Map<String, dynamic>>> _itunesSearch(
+      String term) async {
+    try {
+      final query = Uri.encodeComponent(term);
+      final url = Uri.parse(
+        'https://itunes.apple.com/search?term=$query&media=music&limit=8',
+      );
+      final response = await http.get(url).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) return [];
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final results = (data['results'] as List<dynamic>? ?? [])
+          .cast<Map<String, dynamic>>();
+      return [
+        for (final r in results)
+          if (r['artworkUrl100'] != null)
+            {
+              'trackName': r['trackName'],
+              'artistName': r['artistName'],
+              'artworkUrl': (r['artworkUrl100'] as String)
+                  .replaceAll('100x100bb', '600x600bb'),
+            },
+      ];
+    } catch (_) {
+      return [];
+    }
+  }
 }
 
 // 데모용 재생목록 (실제로는 파일 스캔 + LRC 로더로 대체될 자리)
@@ -484,6 +529,9 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
   /// 직접 저장한 가사인지 표시 (자동으로 찾아온 가사와 구분해서 영구 저장하기 위함).
   final Set<String> _manualLyricsKeys = {};
 
+  /// 사용자가 직접 고른 앨범아트 URL (곡 경로가 키). 있으면 자동 검색보다 우선한다.
+  final Map<String, String> _albumArtOverrides = {};
+
   /// 잠긴 곡은 '인터넷에서 다시 검색'으로도 덮어쓸 수 없다.
   final Set<String> _lockedKeys = {};
   bool get _isCurrentTrackLocked => _lockedKeys.contains(_track.audioAsset);
@@ -566,7 +614,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
       if (embedded != null) return embedded;
     }
     return LyricsService.fetchAlbumArtUrl(
-      artist: track.lyricsSearchArtist ?? track.artist,
+      artist: searchableArtist(track.lyricsSearchArtist ?? track.artist),
       title: track.lyricsSearchTitle ?? track.title,
     );
   }
@@ -587,7 +635,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
       final results = await Future.wait([
         canFetchLyrics
             ? LyricsService.fetchSyncedLyrics(
-                artist: track.lyricsSearchArtist ?? track.artist,
+                artist: searchableArtist(track.lyricsSearchArtist ?? track.artist),
                 title: track.lyricsSearchTitle ?? track.title,
                 targetDuration: _duration,
               )
@@ -1257,6 +1305,11 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
           _lyricsCache[key] = parseLrc(lrc);
           _manualLyricsKeys.add(key);
         }
+        final art = val['art'] as String?;
+        if (art != null && art.isNotEmpty) {
+          _albumArtOverrides[key] = art;
+          _albumArtCache[key] = art;
+        }
         if (locked) _lockedKeys.add(key);
       });
     });
@@ -1268,6 +1321,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
       ..._artistOverrides.keys,
       ..._manualLyricsKeys,
       ..._lockedKeys,
+      ..._albumArtOverrides.keys,
     };
     final data = <String, Map<String, dynamic>>{};
     for (final key in keys) {
@@ -1276,6 +1330,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
         if (_artistOverrides.containsKey(key)) 'artist': _artistOverrides[key],
         if (_manualLyricsKeys.contains(key))
           'lrc': lyricsToLrc(_lyricsCache[key] ?? const []),
+        if (_albumArtOverrides.containsKey(key))
+          'art': _albumArtOverrides[key],
         'locked': _lockedKeys.contains(key),
       };
     }
@@ -1295,6 +1351,17 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
       _artistOverrides[key] = artist;
       _lyricsCache[key] = parseLrc(lrcText);
       _manualLyricsKeys.add(key);
+    });
+    _persistManualEdits();
+  }
+
+  /// 사용자가 검색 후보 중에서 직접 고른 앨범아트를 저장한다. 이후 자동 검색으로
+  /// 덮어써지지 않는다.
+  void _saveAlbumArtOverride(String url) {
+    final key = _track.audioAsset;
+    setState(() {
+      _albumArtOverrides[key] = url;
+      _albumArtCache[key] = url;
     });
     _persistManualEdits();
   }
@@ -1361,6 +1428,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
         onSave: _saveManualEdit,
         onRefetch: _refetchMetadata,
         onSearchCandidates: LyricsService.searchCandidates,
+        onSearchAlbumArt: LyricsService.searchAlbumArtCandidates,
+        onPickAlbumArt: _saveAlbumArtOverride,
         isLocked: _isCurrentTrackLocked,
         onToggleLock: _toggleLock,
       ),
@@ -1382,7 +1451,11 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
       final granted = await requestDeviceLibraryPermission();
       if (granted) {
         final picked = await Navigator.of(context).push<List<DeviceSong>>(
-          MaterialPageRoute(builder: (context) => const _DeviceLibraryPickerScreen()),
+          MaterialPageRoute(
+            builder: (context) => _DeviceLibraryPickerScreen(
+              alreadyAdded: _devicePaths.toSet(),
+            ),
+          ),
         );
         if (picked != null && picked.isNotEmpty) await _addDeviceSongs(picked);
         return;
@@ -1684,7 +1757,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
 /// 폰에 있는 모든 음악 파일을 제목·가수 순으로 보여주고 여러 곡을 골라 추가하는 화면.
 /// 카카오톡 다운로드 폴더처럼 어디에 저장돼 있든, 폰이 "음악"으로 인식만 하면 나온다.
 class _DeviceLibraryPickerScreen extends StatefulWidget {
-  const _DeviceLibraryPickerScreen();
+  final Set<String> alreadyAdded;
+  const _DeviceLibraryPickerScreen({required this.alreadyAdded});
 
   @override
   State<_DeviceLibraryPickerScreen> createState() =>
@@ -1705,7 +1779,11 @@ class _DeviceLibraryPickerScreenState
 
   Future<void> _load() async {
     final songs = await queryDeviceSongs();
-    if (mounted) setState(() => _songs = songs);
+    // 이미 재생목록(전체 곡)에 있는 곡은 목록에서 아예 빼서, 다시 골라도
+    // 중복으로 추가될 일이 없게 한다.
+    final filtered =
+        songs.where((s) => !widget.alreadyAdded.contains(s.path)).toList();
+    if (mounted) setState(() => _songs = filtered);
   }
 
   List<DeviceSong> _filtered(List<DeviceSong> songs) {
@@ -2259,6 +2337,9 @@ class _SongEditSheet extends StatefulWidget {
       {required String title, required String artist}) onRefetch;
   final Future<List<Map<String, dynamic>>> Function(
       {required String title, required String artist}) onSearchCandidates;
+  final Future<List<Map<String, dynamic>>> Function(
+      {required String title, required String artist}) onSearchAlbumArt;
+  final void Function(String url) onPickAlbumArt;
   final bool isLocked;
   final VoidCallback onToggleLock;
 
@@ -2267,6 +2348,8 @@ class _SongEditSheet extends StatefulWidget {
     required this.onSave,
     required this.onRefetch,
     required this.onSearchCandidates,
+    required this.onSearchAlbumArt,
+    required this.onPickAlbumArt,
     required this.isLocked,
     required this.onToggleLock,
   });
@@ -2500,7 +2583,7 @@ class _SongEditSheetState extends State<_SongEditSheet> {
     showBinsTapeSnackBar(context, '후보를 찾는 중...', icon: Icons.search);
     final candidates = await widget.onSearchCandidates(
       title: _titleController.text.trim(),
-      artist: _artistController.text.trim(),
+      artist: searchableArtist(_artistController.text.trim()),
     );
     if (!mounted) return;
 
@@ -2562,6 +2645,71 @@ class _SongEditSheetState extends State<_SongEditSheet> {
       _lrcController.text = lyricsToLrc(parseLrc(picked['syncedLyrics'] as String));
     });
     showBinsTapeSnackBar(context, '선택한 가사를 반영했어요. 저장하기를 눌러 확정하세요.');
+  }
+
+  Future<void> _showAlbumArtPicker(BuildContext context) async {
+    showBinsTapeSnackBar(context, '앨범아트를 찾는 중...', icon: Icons.image_search);
+    final candidates = await widget.onSearchAlbumArt(
+      title: _titleController.text.trim(),
+      artist: searchableArtist(_artistController.text.trim()),
+    );
+    if (!mounted) return;
+
+    if (candidates.isEmpty) {
+      showBinsTapeSnackBar(context, '검색된 이미지가 없어요.', icon: Icons.search_off);
+      return;
+    }
+
+    final picked = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: BinsTapeColors.navyCard,
+        title: const Text('앨범아트 선택',
+            style: TextStyle(color: BinsTapeColors.tapeCream)),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 360,
+          child: GridView.builder(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+            ),
+            itemCount: candidates.length,
+            itemBuilder: (context, index) {
+              final item = candidates[index];
+              final url = item['artworkUrl'] as String;
+              return InkWell(
+                onTap: () => Navigator.pop(context, item),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    url,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      color: BinsTapeColors.magneticBrown,
+                      child: const Icon(Icons.broken_image,
+                          color: BinsTapeColors.dimText),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('취소',
+                style: TextStyle(color: BinsTapeColors.dimText)),
+          ),
+        ],
+      ),
+    );
+
+    if (picked == null || !mounted) return;
+    widget.onPickAlbumArt(picked['artworkUrl'] as String);
+    showBinsTapeSnackBar(context, '앨범아트를 바꿨어요.', icon: Icons.image);
   }
 
   @override
@@ -2696,6 +2844,17 @@ class _SongEditSheetState extends State<_SongEditSheet> {
                         size: 16, color: BinsTapeColors.dimText),
                     label: const Text(
                       '영상에서 가사 추출',
+                      style: TextStyle(color: BinsTapeColors.dimText),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: _isLocked || _isRefetching
+                        ? null
+                        : () => _showAlbumArtPicker(context),
+                    icon: const Icon(Icons.image_search,
+                        size: 16, color: BinsTapeColors.dimText),
+                    label: const Text(
+                      '앨범아트 검색',
                       style: TextStyle(color: BinsTapeColors.dimText),
                     ),
                   ),
@@ -3625,7 +3784,8 @@ class _SyncLyricsViewState extends State<SyncLyricsView> {
             onTap: () => widget.onLyricTap?.call(line.time),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 300),
-              height: _lineHeight,
+              constraints: BoxConstraints(minHeight: _lineHeight),
+              padding: const EdgeInsets.symmetric(vertical: 4),
               alignment: Alignment.centerLeft,
               child: AnimatedDefaultTextStyle(
                 duration: const Duration(milliseconds: 300),
