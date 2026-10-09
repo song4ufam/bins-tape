@@ -761,8 +761,13 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
 
   /// 홈 화면 위젯에도 같은 재생 상태를 반영한다. 위젯 자체가 없는 환경(웹 등)에서도
   /// 조용히 실패하도록 감싼다.
+  ///
+  /// 앨범아트가 네트워크 이미지라서 아직 로컬에 받아둔 적이 없으면, 다운로드를
+  /// 기다리느라 제목/재생 상태 갱신까지 같이 늦어지지 않도록 그것만 먼저 반영하고,
+  /// 이미지는 받아지는 대로 따로 한 번 더 갱신한다.
   Future<void> _publishHomeWidget() async {
     if (kIsWeb) return;
+    final trackKey = _track.audioAsset;
     try {
       await HomeWidget.saveWidgetData<String>('widget_title', _track.title);
       await HomeWidget.saveWidgetData<String>('widget_artist', _track.artist);
@@ -773,13 +778,26 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
         RepeatMode.one => 'one',
         RepeatMode.off => 'off',
       });
-      final artPath = await _resolveLocalArtPath(
-        _track.isNetworkArt ? _track.albumArtAsset : null,
-      );
-      await HomeWidget.saveWidgetData<String>('widget_art_path', artPath ?? '');
+
+      final rawArt = _track.isNetworkArt ? _track.albumArtAsset : null;
+      final cachedPath = rawArt == null
+          ? null
+          : (rawArt.startsWith('http') ? _widgetArtLocalCache[rawArt] : rawArt);
+      await HomeWidget.saveWidgetData<String>('widget_art_path', cachedPath ?? '');
       await HomeWidget.updateWidget(
         qualifiedAndroidName: 'com.example.bins_tape.BinsTapeWidgetProvider',
       );
+
+      if (rawArt != null && cachedPath == null) {
+        final resolved = await _resolveLocalArtPath(rawArt);
+        // 받아오는 사이에 곡이 바뀌었으면 엉뚱한 곡에 이 그림을 붙이지 않는다.
+        if (resolved != null && _track.audioAsset == trackKey) {
+          await HomeWidget.saveWidgetData<String>('widget_art_path', resolved);
+          await HomeWidget.updateWidget(
+            qualifiedAndroidName: 'com.example.bins_tape.BinsTapeWidgetProvider',
+          );
+        }
+      }
     } catch (_) {
       // 위젯이 없거나(미지원 플랫폼) 업데이트 실패해도 본 재생에는 영향 없다.
     }
@@ -2765,11 +2783,17 @@ class _SongEditSheetState extends State<_SongEditSheet> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: BinsTapeColors.navyCard,
+        // 삼성 등 일부 기기의 화면 하단 제스처 바/뒤로가기 버튼 영역에 "취소" 버튼이
+        // 가려지지 않도록, 화면 높이에 맞춰 다이얼로그 자체를 위아래로 넉넉히 띄운다.
+        insetPadding: EdgeInsets.symmetric(
+          horizontal: 24,
+          vertical: 24 + MediaQuery.of(context).padding.bottom,
+        ),
         title: const Text('가사 후보 선택',
             style: TextStyle(color: BinsTapeColors.tapeCream)),
         content: SizedBox(
           width: double.maxFinite,
-          height: 320,
+          height: math.min(320, MediaQuery.of(context).size.height * 0.5),
           child: ListView.builder(
             itemCount: candidates.length,
             itemBuilder: (context, index) {
@@ -2833,11 +2857,15 @@ class _SongEditSheetState extends State<_SongEditSheet> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: BinsTapeColors.navyCard,
+        insetPadding: EdgeInsets.symmetric(
+          horizontal: 24,
+          vertical: 24 + MediaQuery.of(context).padding.bottom,
+        ),
         title: const Text('앨범아트 선택',
             style: TextStyle(color: BinsTapeColors.tapeCream)),
         content: SizedBox(
           width: double.maxFinite,
-          height: 360,
+          height: math.min(360, MediaQuery.of(context).size.height * 0.5),
           child: GridView.builder(
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 3,
@@ -2901,9 +2929,13 @@ class _SongEditSheetState extends State<_SongEditSheet> {
   }
 
   Widget _buildContent(BuildContext context) {
+    final viewInsets = MediaQuery.of(context).viewInsets.bottom;
+    // 키보드가 떠 있을 땐 키보드 높이만큼, 아니면 시스템 네비게이션 바(제스처 바/3버튼 바)
+    // 높이만큼 띄워줘야 맨 아래 "저장하기" 버튼이 거기 가려지지 않는다.
+    final navBarInset = MediaQuery.of(context).padding.bottom;
     return Padding(
       padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
+        bottom: viewInsets > 0 ? viewInsets : navBarInset,
       ),
       child: FractionallySizedBox(
         heightFactor: 0.85,
@@ -3607,16 +3639,21 @@ class _SeekBar extends StatelessWidget {
                   : (v) => onSeek(Duration(milliseconds: v.round())),
             ),
           ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(_fmt(position),
-                  style: const TextStyle(
-                      color: BinsTapeColors.dimText, fontSize: 12)),
-              Text(_fmt(duration),
-                  style: const TextStyle(
-                      color: BinsTapeColors.dimText, fontSize: 12)),
-            ],
+          Padding(
+            // 오른쪽 아래에 떠있는 볼륨 버튼이 끝나는 지점(총 재생 시간) 글자를
+            // 가리지 않도록, 그 버튼 폭만큼 오른쪽에 여유를 둔다.
+            padding: const EdgeInsets.only(right: 44),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(_fmt(position),
+                    style: const TextStyle(
+                        color: BinsTapeColors.dimText, fontSize: 12)),
+                Text(_fmt(duration),
+                    style: const TextStyle(
+                        color: BinsTapeColors.dimText, fontSize: 12)),
+              ],
+            ),
           ),
         ],
       ),
@@ -3868,6 +3905,9 @@ class SyncLyricsView extends StatefulWidget {
 class _SyncLyricsViewState extends State<SyncLyricsView> {
   final ScrollController _scrollController = ScrollController();
   int _activeIndex = -1;
+  // 재생 위치가 복원돼서 중간 지점부터 시작하더라도, 화면을 처음 열었을 때는
+  // 항상 가사 첫 줄부터 보여준다. 이후 실제로 재생 위치가 바뀔 때만 따라 스크롤한다.
+  bool _hasScrolledOnce = false;
 
   static const double _lineHeight = 46;
 
@@ -3877,7 +3917,11 @@ class _SyncLyricsViewState extends State<SyncLyricsView> {
     final newIndex = _indexForPosition(widget.currentPosition);
     if (newIndex != _activeIndex) {
       _activeIndex = newIndex;
-      _scrollToActive();
+      if (_hasScrolledOnce) {
+        _scrollToActive();
+      } else {
+        _hasScrolledOnce = true;
+      }
     }
   }
 

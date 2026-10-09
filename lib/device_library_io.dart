@@ -28,6 +28,8 @@ Future<List<DeviceSong>> queryDeviceSongs() async {
   return [
     for (final s in songs)
       if (s.data.isNotEmpty &&
+          s.isMusic != false &&
+          !_looksLikeSystemSound(s.data) &&
           seenKeys.add('${s.title}|${s.duration}|${s.size}'))
         DeviceSong(
           path: s.data,
@@ -39,6 +41,20 @@ Future<List<DeviceSong>> queryDeviceSongs() async {
           id: s.id,
         ),
   ];
+}
+
+/// 삼성 기본 벨소리/알림음처럼 시스템이 미리 깔아둔 소리 파일은 사용자 음악이
+/// 아니라서 제외한다. isMusic 플래그가 false거나 안 믿을만한 기종도 있어서,
+/// 경로로도 한 번 더 걸러준다.
+bool _looksLikeSystemSound(String path) {
+  final lower = path.toLowerCase();
+  return lower.contains('/ringtones/') ||
+      lower.contains('/notifications/') ||
+      lower.contains('/alarms/') ||
+      lower.contains('/product/media/') ||
+      lower.contains('/system/media/') ||
+      // 삼성 기기는 "Over the Horizon" 같은 기본 샘플곡을 Music/Samsung/ 안에 심어둔다.
+      lower.contains('/music/samsung/');
 }
 
 /// 파일 안에 박혀있는 앨범아트(ID3 임베드 이미지)를 꺼내서 캐시 파일로 저장하고
