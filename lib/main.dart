@@ -18,6 +18,7 @@ import 'app_updater_stub.dart' if (dart.library.io) 'app_updater_io.dart';
 import 'lyrics_ocr.dart';
 import 'ocr_service_stub.dart' if (dart.library.js_interop) 'ocr_service_web.dart';
 import 'media_bridge.dart';
+import 'package:home_widget/home_widget.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -673,6 +674,23 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
       artUri: art,
     );
     handler.publishPlaybackState(playing: _isPlaying, position: _position);
+    _publishHomeWidget();
+  }
+
+  /// 홈 화면 위젯에도 같은 재생 상태를 반영한다. 위젯 자체가 없는 환경(웹 등)에서도
+  /// 조용히 실패하도록 감싼다.
+  Future<void> _publishHomeWidget() async {
+    if (kIsWeb) return;
+    try {
+      await HomeWidget.saveWidgetData<String>('widget_title', _track.title);
+      await HomeWidget.saveWidgetData<String>('widget_artist', _track.artist);
+      await HomeWidget.saveWidgetData<bool>('widget_is_playing', _isPlaying);
+      await HomeWidget.updateWidget(
+        qualifiedAndroidName: 'com.example.bins_tape.BinsTapeWidgetProvider',
+      );
+    } catch (_) {
+      // 위젯이 없거나(미지원 플랫폼) 업데이트 실패해도 본 재생에는 영향 없다.
+    }
   }
 
   /// 곡이 끝까지 재생됐을 때 반복 모드에 따라 다음 동작을 결정한다.
