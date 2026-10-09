@@ -608,6 +608,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
 
     WidgetsBinding.instance.addObserver(this);
     _checkForAppUpdate();
+    _syncShuffleRepeatFromWidget();
     _loadSavedPlaylist();
     _loadCustomPlaylists();
     _loadSyncOffsets();
@@ -685,6 +686,12 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
       await HomeWidget.saveWidgetData<String>('widget_title', _track.title);
       await HomeWidget.saveWidgetData<String>('widget_artist', _track.artist);
       await HomeWidget.saveWidgetData<bool>('widget_is_playing', _isPlaying);
+      await HomeWidget.saveWidgetData<bool>('widget_is_shuffle', _isShuffle);
+      await HomeWidget.saveWidgetData<String>('widget_repeat_mode', switch (_repeatMode) {
+        RepeatMode.all => 'all',
+        RepeatMode.one => 'one',
+        RepeatMode.off => 'off',
+      });
       await HomeWidget.updateWidget(
         qualifiedAndroidName: 'com.example.bins_tape.BinsTapeWidgetProvider',
       );
@@ -715,6 +722,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
 
   void _toggleShuffle() {
     setState(() => _isShuffle = !_isShuffle);
+    _publishHomeWidget();
   }
 
   void _cycleRepeatMode() {
@@ -725,6 +733,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
         RepeatMode.one => RepeatMode.off,
       };
     });
+    _publishHomeWidget();
   }
 
   Future<void> _playNext() async {
@@ -1442,7 +1451,33 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // 백그라운드에 있다가 앱으로 돌아올 때도 새 버전이 있는지 확인한다.
-    if (state == AppLifecycleState.resumed) _checkForAppUpdate();
+    if (state == AppLifecycleState.resumed) {
+      _checkForAppUpdate();
+      _syncShuffleRepeatFromWidget();
+    }
+  }
+
+  /// 앱이 꺼져있는 동안 홈 화면 위젯에서 반복/셔플을 바꿨을 수 있으니, 앱이 다시 열릴 때
+  /// 그 값을 읽어와 실제 재생에 반영한다 (위젯은 Dart 없이도 직접 상태값만 바꿔둔다).
+  Future<void> _syncShuffleRepeatFromWidget() async {
+    if (kIsWeb) return;
+    try {
+      final shuffle = await HomeWidget.getWidgetData<bool>('widget_is_shuffle');
+      final repeat = await HomeWidget.getWidgetData<String>('widget_repeat_mode');
+      if (!mounted) return;
+      setState(() {
+        if (shuffle != null) _isShuffle = shuffle;
+        if (repeat != null) {
+          _repeatMode = switch (repeat) {
+            'all' => RepeatMode.all,
+            'one' => RepeatMode.one,
+            _ => RepeatMode.off,
+          };
+        }
+      });
+    } catch (_) {
+      // 위젯을 안 쓰는 환경이면 조용히 넘어간다.
+    }
   }
 
   @override

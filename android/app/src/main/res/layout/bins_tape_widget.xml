@@ -37,48 +37,59 @@
             android:tint="#8A8A8E" />
     </LinearLayout>
 
-    <!-- 곡 정보 + 재생 컨트롤 -->
+    <!-- 곡 정보 -->
     <LinearLayout
+        android:id="@+id/widget_track_info"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:orientation="horizontal"
+        android:orientation="vertical"
         android:gravity="center_vertical"
-        android:layout_marginTop="8dp">
-
-        <LinearLayout
-            android:id="@+id/widget_track_info"
-            android:layout_width="0dp"
+        android:layout_marginTop="4dp">
+        <TextView
+            android:id="@+id/widget_title"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical">
-            <TextView
-                android:id="@+id/widget_title"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="재생 중인 곡 없음"
-                android:textColor="#F5F1EC"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:maxLines="1"
-                android:ellipsize="end" />
-            <TextView
-                android:id="@+id/widget_artist"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Bin's TAPE를 열어 곡을 재생해보세요"
-                android:textColor="#8A8A8E"
-                android:textSize="12sp"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:layout_marginTop="2dp" />
-        </LinearLayout>
+            android:text="재생 중인 곡 없음"
+            android:textColor="#F5F1EC"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end" />
+        <TextView
+            android:id="@+id/widget_artist"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Bin's TAPE를 열어 곡을 재생해보세요"
+            android:textColor="#8A8A8E"
+            android:textSize="12sp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:layout_marginTop="2dp" />
+    </LinearLayout>
+
+    <!-- 재생 컨트롤: 반복 | 이전 | 재생 | 다음 | 셔플 (FLO 등 음악 앱 위젯과 같은 배치) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center">
+
+        <ImageButton
+            android:id="@+id/widget_repeat"
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:background="@android:color/transparent"
+            android:scaleType="fitCenter"
+            android:padding="6dp"
+            android:src="@drawable/ic_widget_repeat"
+            android:alpha="0.5" />
 
         <ImageButton
             android:id="@+id/widget_prev"
             android:layout_width="36dp"
             android:layout_height="36dp"
-            android:layout_marginEnd="4dp"
+            android:layout_marginStart="8dp"
             android:background="@android:color/transparent"
             android:scaleType="fitCenter"
             android:padding="6dp"
@@ -88,6 +99,7 @@
             android:id="@+id/widget_play_pause"
             android:layout_width="44dp"
             android:layout_height="44dp"
+            android:layout_marginStart="8dp"
             android:background="@drawable/widget_play_circle"
             android:scaleType="fitCenter"
             android:padding="10dp"
@@ -97,10 +109,21 @@
             android:id="@+id/widget_next"
             android:layout_width="36dp"
             android:layout_height="36dp"
-            android:layout_marginStart="4dp"
+            android:layout_marginStart="8dp"
             android:background="@android:color/transparent"
             android:scaleType="fitCenter"
             android:padding="6dp"
             android:src="@android:drawable/ic_media_next" />
+
+        <ImageButton
+            android:id="@+id/widget_shuffle"
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:layout_marginStart="8dp"
+            android:background="@android:color/transparent"
+            android:scaleType="fitCenter"
+            android:padding="6dp"
+            android:src="@drawable/ic_widget_shuffle"
+            android:alpha="0.5" />
     </LinearLayout>
 </LinearLayout>
