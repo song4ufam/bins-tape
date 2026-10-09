@@ -506,6 +506,10 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
   Duration _duration = Duration.zero;
   bool _isPlaying = false;
   bool _isShuffle = false;
+
+  /// 수면 타이머. 켜져 있으면 1초마다 줄어들다가 0이 되면 재생을 멈춘다.
+  Timer? _sleepTimer;
+  Duration? _sleepTimerRemaining;
   RepeatMode _repeatMode = RepeatMode.off;
   double _volume = 1.0;
 
@@ -672,6 +676,9 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
     _syncShuffleRepeatFromWidget();
     _loadSavedPlaylist();
     _loadCustomPlaylists();
+    // 전체 곡 로딩이 끝나고 조금 지난 뒤에 새 파일이 있는지 확인한다(그래야
+    // "이미 추가된 곡"과 비교가 정확하다).
+    Future.delayed(const Duration(seconds: 2), _checkForNewDeviceSongs);
     _loadSyncOffsets();
     _loadManualEdits().then((_) => _ensureMetadata(_track));
 
@@ -739,6 +746,19 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
     _publishHomeWidget();
   }
 
+  /// 네트워크 URL인 앨범아트는 위젯(네이티브)이 직접 못 읽으니, 한 번 받아서
+  /// 로컬 파일로 캐싱해둔다. 이미 로컬 파일 경로면(임베드 아트워크) 그대로 쓴다.
+  final Map<String, String> _widgetArtLocalCache = {};
+  Future<String?> _resolveLocalArtPath(String? art) async {
+    if (art == null || art.isEmpty) return null;
+    if (!art.startsWith('http://') && !art.startsWith('https://')) return art;
+    final cached = _widgetArtLocalCache[art];
+    if (cached != null) return cached;
+    final path = await downloadToCacheFile(art);
+    if (path != null) _widgetArtLocalCache[art] = path;
+    return path;
+  }
+
   /// 홈 화면 위젯에도 같은 재생 상태를 반영한다. 위젯 자체가 없는 환경(웹 등)에서도
   /// 조용히 실패하도록 감싼다.
   Future<void> _publishHomeWidget() async {
@@ -753,6 +773,10 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
         RepeatMode.one => 'one',
         RepeatMode.off => 'off',
       });
+      final artPath = await _resolveLocalArtPath(
+        _track.isNetworkArt ? _track.albumArtAsset : null,
+      );
+      await HomeWidget.saveWidgetData<String>('widget_art_path', artPath ?? '');
       await HomeWidget.updateWidget(
         qualifiedAndroidName: 'com.example.bins_tape.BinsTapeWidgetProvider',
       );
@@ -1418,6 +1442,52 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
     _persistManualEdits();
   }
 
+  Future<void> _showSleepTimerDialog() async {
+    final picked = await showDialog<Duration?>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: BinsTapeColors.navyCard,
+        title: const Text('수면 타이머',
+            style: TextStyle(color: BinsTapeColors.tapeCream)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final minutes in [15, 30, 45, 60])
+              ListTile(
+                title: Text('$minutes분 후 정지',
+                    style: const TextStyle(color: BinsTapeColors.tapeCream)),
+                onTap: () =>
+                    Navigator.pop(context, Duration(minutes: minutes)),
+              ),
+            if (_sleepTimerRemaining != null)
+              ListTile(
+                title: const Text('타이머 끄기',
+                    style: TextStyle(color: BinsTapeColors.tapeAmber)),
+                onTap: () => Navigator.pop(context, Duration.zero),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('취소',
+                style: TextStyle(color: BinsTapeColors.dimText)),
+          ),
+        ],
+      ),
+    );
+    if (picked == null) return;
+    if (picked == Duration.zero) {
+      _cancelSleepTimer();
+      showBinsTapeSnackBar(context, '수면 타이머를 껐어요.', icon: Icons.bedtime_off);
+    } else {
+      _startSleepTimer(picked);
+      showBinsTapeSnackBar(
+          context, '${picked.inMinutes}분 후에 재생을 멈출게요.',
+          icon: Icons.bedtime);
+    }
+  }
+
   void _openEditModal() {
     showModalBottomSheet(
       context: context,
@@ -1540,9 +1610,37 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
     _ensureMetadata(_track);
   }
 
+  /// 수면 타이머를 켠다. 이미 켜져 있었다면 새 시간으로 덮어쓴다.
+  void _startSleepTimer(Duration duration) {
+    _sleepTimer?.cancel();
+    setState(() => _sleepTimerRemaining = duration);
+    _sleepTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      final remaining = _sleepTimerRemaining;
+      if (remaining == null) {
+        timer.cancel();
+        return;
+      }
+      final next = remaining - const Duration(seconds: 1);
+      if (next <= Duration.zero) {
+        timer.cancel();
+        setState(() => _sleepTimerRemaining = null);
+        if (_isPlaying) _player.pause();
+        return;
+      }
+      setState(() => _sleepTimerRemaining = next);
+    });
+  }
+
+  void _cancelSleepTimer() {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    setState(() => _sleepTimerRemaining = null);
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _sleepTimer?.cancel();
     _posSub?.cancel();
     _durSub?.cancel();
     _stateSub?.cancel();
@@ -1558,6 +1656,53 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
     if (state == AppLifecycleState.resumed) {
       _checkForAppUpdate();
       _syncShuffleRepeatFromWidget();
+      _checkForNewDeviceSongs();
+    }
+  }
+
+  /// 카카오톡 등으로 새로 받은 mp3가 기기에 있는지 확인해서, 있으면 "추가할까요?"
+  /// 라고 한 번 물어본다. 직접 "폰에서 곡 고르기"를 안 열어도 되게 하기 위함.
+  Future<void> _checkForNewDeviceSongs() async {
+    if (kIsWeb || !deviceLibrarySupported) return;
+    try {
+      final songs = await queryDeviceSongs();
+      final known = _devicePaths.toSet();
+      final newSongs =
+          songs.where((s) => !known.contains(s.path)).toList();
+      if (!mounted || newSongs.isEmpty) return;
+      final result = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: BinsTapeColors.navyCard,
+          title: const Text('새 음악 파일을 찾았어요',
+              style: TextStyle(color: BinsTapeColors.tapeCream)),
+          content: Text(
+            '폰에 아직 추가 안 한 곡이 ${newSongs.length}개 있어요. 전체 곡에 추가할까요?',
+            style: const TextStyle(color: BinsTapeColors.dimText),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('나중에',
+                  style: TextStyle(color: BinsTapeColors.dimText)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('추가하기',
+                  style: TextStyle(color: BinsTapeColors.tapeAmber)),
+            ),
+          ],
+        ),
+      );
+      if (result == true && mounted) {
+        await _addDeviceSongs(newSongs);
+        if (mounted) {
+          showBinsTapeSnackBar(
+              context, '${newSongs.length}곡을 추가했어요.', icon: Icons.library_add_check);
+        }
+      }
+    } catch (_) {
+      // 권한이 없거나 조회 실패하면 조용히 넘어간다.
     }
   }
 
@@ -1678,6 +1823,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
               _TopBar(
                 title: '지금 재생 중',
                 onOpenPlaylist: _openPlaylistSheet,
+                onOpenSleepTimer: _showSleepTimerDialog,
+                sleepTimerRemaining: _sleepTimerRemaining,
               ),
               const SizedBox(height: 12),
 
@@ -2218,20 +2365,35 @@ class _PlaylistSidebar extends StatelessWidget {
 class _TopBar extends StatelessWidget {
   final String title;
   final VoidCallback onOpenPlaylist;
+  final VoidCallback onOpenSleepTimer;
+  final Duration? sleepTimerRemaining;
   const _TopBar({
     required this.title,
     required this.onOpenPlaylist,
+    required this.onOpenSleepTimer,
+    this.sleepTimerRemaining,
   });
 
   @override
   Widget build(BuildContext context) {
+    final remaining = sleepTimerRemaining;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // 뒤로 갈 화면이 없는 단일 화면 앱이라, 우측 버튼과 균형만 맞추는 빈 자리.
-          const SizedBox(width: 48),
+          IconButton(
+            onPressed: onOpenSleepTimer,
+            icon: Icon(
+              remaining != null ? Icons.bedtime : Icons.bedtime_outlined,
+              color: remaining != null
+                  ? BinsTapeColors.tapeAmber
+                  : BinsTapeColors.tapeCream,
+            ),
+            tooltip: remaining != null
+                ? '남은 시간 ${remaining.inMinutes}:${(remaining.inSeconds % 60).toString().padLeft(2, '0')}'
+                : '수면 타이머',
+          ),
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [

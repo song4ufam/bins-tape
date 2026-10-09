@@ -6,9 +6,11 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.view.KeyEvent
 import android.widget.RemoteViews
+import java.io.File
 import com.ryanheise.audioservice.MediaButtonReceiver
 import es.antonborri.home_widget.HomeWidgetLaunchIntent
 import es.antonborri.home_widget.HomeWidgetProvider
@@ -70,6 +72,7 @@ class BinsTapeWidgetProvider : HomeWidgetProvider() {
         val isPlaying = widgetData.getBoolean("widget_is_playing", false)
         val isShuffle = widgetData.getBoolean("widget_is_shuffle", false)
         val repeatMode = widgetData.getString("widget_repeat_mode", "off") ?: "off"
+        val artPath = widgetData.getString("widget_art_path", null)
 
         appWidgetIds.forEach { widgetId ->
             val views = RemoteViews(context.packageName, R.layout.bins_tape_widget).apply {
@@ -88,6 +91,16 @@ class BinsTapeWidgetProvider : HomeWidgetProvider() {
                 )
                 setInt(R.id.widget_repeat, "setColorFilter", if (repeatMode == "off") dimCream else recRed)
                 setInt(R.id.widget_shuffle, "setColorFilter", if (isShuffle) recRed else dimCream)
+
+                val artBitmap = if (!artPath.isNullOrEmpty() && File(artPath).exists()) {
+                    BitmapFactory.decodeFile(artPath)
+                } else null
+                if (artBitmap != null) {
+                    setImageViewBitmap(R.id.widget_album_art, artBitmap)
+                    setViewVisibility(R.id.widget_album_art, android.view.View.VISIBLE)
+                } else {
+                    setViewVisibility(R.id.widget_album_art, android.view.View.GONE)
+                }
 
                 // 배경 전체가 아니라 아이콘/곡 정보 영역에서만 앱이 열리도록 해서,
                 // 재생 버튼을 살짝 빗나가 눌러도 실수로 앱이 열리지 않게 한다.
