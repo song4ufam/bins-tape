@@ -17,8 +17,11 @@ import 'device_library_stub.dart' if (dart.library.io) 'device_library_io.dart';
 import 'app_updater_stub.dart' if (dart.library.io) 'app_updater_io.dart';
 import 'lyrics_ocr.dart';
 import 'ocr_service_stub.dart' if (dart.library.js_interop) 'ocr_service_web.dart';
+import 'media_bridge.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await initAudioHandler();
   runApp(const BinsTapeApp());
 }
 
@@ -623,6 +626,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
       setState(() => _duration = d);
       // 실제 재생 길이를 이제 알았으니, 정확한 버전의 가사를 다시 찾아본다.
       _ensureMetadata(_track);
+      _publishMediaSession();
     });
     _stateSub = _player.onPlayerStateChanged.listen((s) {
       if (!mounted) return;
@@ -632,8 +636,43 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
       } else {
         _reelController.stop();
       }
+      _publishMediaSession();
     });
     _completeSub = _player.onPlayerComplete.listen((_) => _onTrackFinished());
+
+    // 잠금화면/알림의 재생·일시정지·다음·이전 버튼을 기존 재생 로직에 연결한다.
+    audioHandler
+      ?..onPlayPressed = () async {
+        if (!_isPlaying) await _togglePlay();
+      }
+      ..onPausePressed = () async {
+        if (_isPlaying) await _togglePlay();
+      }
+      ..onNextPressed = _playNext
+      ..onPreviousPressed = _playPrevious
+      ..onSeekPressed = _seekTo;
+    _publishMediaSession();
+  }
+
+  /// 지금 재생 중인 곡/상태를 잠금화면·알림 미디어 세션에 반영한다.
+  void _publishMediaSession() {
+    final handler = audioHandler;
+    if (handler == null) return;
+    Uri? art;
+    if (_track.isNetworkArt) {
+      try {
+        art = Uri.parse(_track.albumArtAsset);
+      } catch (_) {
+        art = null;
+      }
+    }
+    handler.publishMediaItem(
+      title: _track.title,
+      artist: _track.artist,
+      duration: _duration,
+      artUri: art,
+    );
+    handler.publishPlaybackState(playing: _isPlaying, position: _position);
   }
 
   /// 곡이 끝까지 재생됐을 때 반복 모드에 따라 다음 동작을 결정한다.
@@ -739,6 +778,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen>
     await _player.play(buildAudioSource(_track));
     await _player.setVolume(_volume);
     _ensureMetadata(_track);
+    _publishMediaSession();
   }
 
   Future<void> _loadSavedPlaylist() async {
