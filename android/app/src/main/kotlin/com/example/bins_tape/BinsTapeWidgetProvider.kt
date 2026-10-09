@@ -67,6 +67,37 @@ class BinsTapeWidgetProvider : HomeWidgetProvider() {
         appWidgetIds: IntArray,
         widgetData: SharedPreferences,
     ) {
+        appWidgetIds.forEach { widgetId ->
+            val isSmall = isSmallSize(appWidgetManager, widgetId)
+            val views = buildViews(context, widgetData, isSmall)
+            appWidgetManager.updateAppWidget(widgetId, views)
+        }
+    }
+
+    // 위젯을 홈화면에서 1줄(세로로 짧게) 크기로 줄이면 반복/셔플/워드마크를 뺀
+    // 작은 레이아웃으로 바꿔준다. 사용자가 크기를 조절할 때마다 안드로이드가 이걸 불러준다.
+    override fun onAppWidgetOptionsChanged(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetId: Int,
+        newOptions: android.os.Bundle,
+    ) {
+        val isSmall = newOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0) < 70
+        val views = buildViews(context, homeWidgetPrefs(context), isSmall)
+        appWidgetManager.updateAppWidget(appWidgetId, views)
+    }
+
+    private fun isSmallSize(appWidgetManager: AppWidgetManager, widgetId: Int): Boolean {
+        val options = appWidgetManager.getAppWidgetOptions(widgetId)
+        val minHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 90)
+        return minHeight < 70
+    }
+
+    private fun buildViews(
+        context: Context,
+        widgetData: SharedPreferences,
+        isSmall: Boolean,
+    ): RemoteViews {
         val title = widgetData.getString("widget_title", null) ?: "재생 중인 곡 없음"
         val artist = widgetData.getString("widget_artist", null) ?: "Bin's TAPE를 열어 곡을 재생해보세요"
         val isPlaying = widgetData.getBoolean("widget_is_playing", false)
@@ -74,15 +105,21 @@ class BinsTapeWidgetProvider : HomeWidgetProvider() {
         val repeatMode = widgetData.getString("widget_repeat_mode", "off") ?: "off"
         val artPath = widgetData.getString("widget_art_path", null)
 
-        appWidgetIds.forEach { widgetId ->
-            val views = RemoteViews(context.packageName, R.layout.bins_tape_widget).apply {
+        val layoutRes = if (isSmall) R.layout.bins_tape_widget_small else R.layout.bins_tape_widget
+        return RemoteViews(context.packageName, layoutRes).apply {
+            if (isSmall) {
+                // 한 줄짜리 위젯은 제목/아티스트를 둘 다 둘 공간이 없어서 한 줄로 합친다.
+                setTextViewText(R.id.widget_title, "$title · $artist")
+            } else {
                 setTextViewText(R.id.widget_title, title)
                 setTextViewText(R.id.widget_artist, artist)
-                setImageViewResource(
-                    R.id.widget_play_pause,
-                    if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
-                )
+            }
+            setImageViewResource(
+                R.id.widget_play_pause,
+                if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
+            )
 
+            if (!isSmall) {
                 val recRed = Color.parseColor("#E0332F")
                 val dimCream = Color.parseColor("#8A8A8E")
                 setImageViewResource(
@@ -91,38 +128,37 @@ class BinsTapeWidgetProvider : HomeWidgetProvider() {
                 )
                 setInt(R.id.widget_repeat, "setColorFilter", if (repeatMode == "off") dimCream else recRed)
                 setInt(R.id.widget_shuffle, "setColorFilter", if (isShuffle) recRed else dimCream)
-
-                val artBitmap = if (!artPath.isNullOrEmpty() && File(artPath).exists()) {
-                    BitmapFactory.decodeFile(artPath)
-                } else null
-                if (artBitmap != null) {
-                    setImageViewBitmap(R.id.widget_album_art, artBitmap)
-                    setViewVisibility(R.id.widget_album_art, android.view.View.VISIBLE)
-                } else {
-                    setViewVisibility(R.id.widget_album_art, android.view.View.GONE)
-                }
-
-                // 배경 전체가 아니라 아이콘/곡 정보 영역에서만 앱이 열리도록 해서,
-                // 재생 버튼을 살짝 빗나가 눌러도 실수로 앱이 열리지 않게 한다.
-                val openAppIntent = HomeWidgetLaunchIntent.getActivity(context, MainActivity::class.java)
-                setOnClickPendingIntent(R.id.widget_open_app, openAppIntent)
-                setOnClickPendingIntent(R.id.widget_track_info, openAppIntent)
-                setOnClickPendingIntent(
-                    R.id.widget_prev,
-                    mediaButtonPendingIntent(context, KeyEvent.KEYCODE_MEDIA_PREVIOUS, 1),
-                )
-                setOnClickPendingIntent(
-                    R.id.widget_play_pause,
-                    mediaButtonPendingIntent(context, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, 2),
-                )
-                setOnClickPendingIntent(
-                    R.id.widget_next,
-                    mediaButtonPendingIntent(context, KeyEvent.KEYCODE_MEDIA_NEXT, 3),
-                )
                 setOnClickPendingIntent(R.id.widget_repeat, selfActionPendingIntent(context, ACTION_CYCLE_REPEAT, 4))
                 setOnClickPendingIntent(R.id.widget_shuffle, selfActionPendingIntent(context, ACTION_TOGGLE_SHUFFLE, 5))
             }
-            appWidgetManager.updateAppWidget(widgetId, views)
+
+            val artBitmap = if (!artPath.isNullOrEmpty() && File(artPath).exists()) {
+                BitmapFactory.decodeFile(artPath)
+            } else null
+            if (artBitmap != null) {
+                setImageViewBitmap(R.id.widget_album_art, artBitmap)
+                setViewVisibility(R.id.widget_album_art, android.view.View.VISIBLE)
+            } else {
+                setViewVisibility(R.id.widget_album_art, android.view.View.GONE)
+            }
+
+            // 배경 전체가 아니라 아이콘/곡 정보 영역에서만 앱이 열리도록 해서,
+            // 재생 버튼을 살짝 빗나가 눌러도 실수로 앱이 열리지 않게 한다.
+            val openAppIntent = HomeWidgetLaunchIntent.getActivity(context, MainActivity::class.java)
+            setOnClickPendingIntent(R.id.widget_open_app, openAppIntent)
+            setOnClickPendingIntent(R.id.widget_track_info, openAppIntent)
+            setOnClickPendingIntent(
+                R.id.widget_prev,
+                mediaButtonPendingIntent(context, KeyEvent.KEYCODE_MEDIA_PREVIOUS, 1),
+            )
+            setOnClickPendingIntent(
+                R.id.widget_play_pause,
+                mediaButtonPendingIntent(context, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, 2),
+            )
+            setOnClickPendingIntent(
+                R.id.widget_next,
+                mediaButtonPendingIntent(context, KeyEvent.KEYCODE_MEDIA_NEXT, 3),
+            )
         }
     }
 

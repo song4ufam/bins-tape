@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 1줄(4x1)짜리 작은 위젯. 폰 기본 음악 위젯처럼 곡 정보 + 이전/재생/다음만 넣고
+     앨범아트/앱 열기 아이콘/반복/셔플/워드마크는 공간이 부족해서 뺐다
+     (그건 4x2 위젯이나 앱에서). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="@drawable/widget_background"
+    android:paddingStart="12dp"
+    android:paddingEnd="8dp"
+    android:paddingTop="2dp"
+    android:paddingBottom="2dp">
+
+    <ImageView
+        android:id="@+id/widget_album_art"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/widget_track_info"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:gravity="center_vertical">
+        <!-- 한 줄짜리 위젯이라 제목/아티스트를 두 줄로 나누면 공간이 부족해서
+             "제목 · 아티스트" 한 줄로 합쳐 보여준다 (코드에서 조합). -->
+        <TextView
+            android:id="@+id/widget_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="재생 중인 곡 없음"
+            android:textColor="#F5F1EC"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end" />
+        <TextView
+            android:id="@+id/widget_artist"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <ImageButton
+        android:id="@+id/widget_prev"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_marginStart="4dp"
+        android:background="@android:color/transparent"
+        android:scaleType="fitCenter"
+        android:padding="2dp"
+        android:src="@android:drawable/ic_media_previous" />
+
+    <ImageButton
+        android:id="@+id/widget_play_pause"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:layout_marginStart="4dp"
+        android:background="@drawable/widget_play_circle"
+        android:scaleType="fitCenter"
+        android:padding="6dp"
+        android:src="@android:drawable/ic_media_play" />
+
+    <ImageButton
+        android:id="@+id/widget_next"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_marginStart="4dp"
+        android:background="@android:color/transparent"
+        android:scaleType="fitCenter"
+        android:padding="2dp"
+        android:src="@android:drawable/ic_media_next" />
+
+    <!-- id는 코드에서 공통으로 참조하니 유지하되, 작은 위젯에서는 안 보이게 숨긴다. -->
+    <ImageButton
+        android:id="@+id/widget_open_app"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone" />
+</LinearLayout>
